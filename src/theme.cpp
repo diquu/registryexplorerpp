@@ -5,6 +5,8 @@
 
 namespace repp {
 
+static Fonts g_fonts = {};
+
 ImVec4 rgb(unsigned int hex, float alpha) {
     ImVec4 c = {};
     c.x = ((hex >> 16) & 0xFF) / 255.0f;
@@ -14,8 +16,7 @@ ImVec4 rgb(unsigned int hex, float alpha) {
     return c;
 }
 
-Fonts setup_theme() {
-    ImGuiStyle& style = ImGui::GetStyle();
+Fonts setup_theme() {    ImGuiStyle& style = ImGui::GetStyle();
     style.WindowPadding = ImVec2(0.0f, 0.0f);
     style.FramePadding = ImVec2(10.0f, 4.0f);
     style.ItemSpacing = ImVec2(8.0f, 6.0f);
@@ -93,11 +94,18 @@ Fonts setup_theme() {
     add(segoe, 15.0f, fonts.body);
     add(segoeuib, 15.0f, fonts.semibold);
     add(segoeuib, 17.0f, fonts.bold);
+    add(segoeuib, 21.0f, fonts.display);
     add(consolas, 12.5f, fonts.mono);
     if (fonts.mono == nullptr) {
         fonts.mono = fonts.body;
     }
-    return fonts;
+
+    g_fonts = fonts;
+    return g_fonts;
+}
+
+const Fonts& fonts() {
+    return g_fonts;
 }
 
 }

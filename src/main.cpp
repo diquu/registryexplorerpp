@@ -1,6 +1,7 @@
 ﻿#include "theme.h"
 #include "registry_hive.h"
 #include "app.h"
+#include "suspicious.h"
 
 #include <d3d11.h>
 #include <dwmapi.h>
@@ -126,12 +127,98 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lP
 
 }
 
+int run_suspicious_selftest() {
+    repp::RegistryHive hive;
+    hive.rootName = L"SYNTHETIC";
+
+    auto addKey = [&](const std::wstring& path) -> size_t {
+        size_t index = hive.keys.size();
+        repp::RegistryKey key;
+        key.name = path.substr(path.find_last_of(L'\\') + 1);
+        key.path = path;
+        key.cellOffset = static_cast<uint32_t>(0x1000 + index * 0x1000);
+        key.lastWrite = 0;
+        hive.keys.push_back(key);
+        return index;
+    };
+
+    auto addValue = [&](size_t keyIndex, const std::wstring& name, uint32_t type, const std::wstring& preview,
+                        const std::vector<uint8_t>& data) {
+        repp::RegistryValue value;
+        value.name = name;
+        value.type = type;
+        value.preview = preview;
+        value.data = data;
+        hive.values.push_back(value);
+        hive.keys[keyIndex].values.push_back(static_cast<uint32_t>(hive.values.size() - 1));
+    };
+
+    size_t url = addKey(L"SYNTH\\Software\\Policies\\Google\\Chrome\\URLBlocklist");
+    addValue(url, L"1", 1, L"github.com", {});
+    addValue(url, L"2", 1, L"winupdate.net", {});
+
+    size_t settings = addKey(L"NT AUTHORITY\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer");
+    addValue(settings, L"SettingsPageVisibility", 1, L"hide:network;windowsupdate", {});
+
+    size_t dlg = addKey(L"NT AUTHORITY\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ComDlg32");
+    addValue(dlg, L"NotFileMru", 4, L"0x00000001 (1)", {1, 0, 0, 0});
+
+    size_t cpm = addKey(L"NT AUTHORITY\\SOFTWARE\\Microsoft\\Command Processor");
+    addValue(cpm, L"AutoRun", 1, L"taskkill /f /im cmd.exe", {});
+
+    size_t disallow = addKey(L"NT AUTHORITY\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\DisallowRun");
+    addValue(disallow, L"1", 1, L"nircmd.exe", {});
+
+    size_t prefetch = addKey(L"SYSTEM\\ControlSet001\\Control\\Session Manager\\Memory Management\\PrefetchParameters");
+    addValue(prefetch, L"EnablePrefetcher", 4, L"0x00000000 (0)", {0, 0, 0, 0});
+
+    addKey(L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WINEVT\\Channels\\Microsoft-Windows-PowerShell/Operational");
+
+    size_t bam = addKey(L"SYSTEM\\ControlSet001\\Services\\bam");
+    hive.deletedKeyIndices.push_back(bam);
+
+    std::vector<repp::Finding> findings = repp::scan_suspicious(hive);
+    int failures = 0;
+    for (const repp::Finding& finding : findings) {
+        std::wcout << repp::severity_label(finding.severity) << L"  " << finding.rule << L"\n";
+    }
+    auto expect = [&](const wchar_t* rule, repp::Severity severity) {
+        for (const repp::Finding& finding : findings) {
+            if (finding.rule == rule) {
+                if (finding.severity != severity) {
+                    std::wcout << L"FAIL: " << rule << L" expected " << repp::severity_label(severity)
+                               << L" got " << repp::severity_label(finding.severity) << L"\n";
+                    ++failures;
+                }
+                return;
+            }
+        }
+        std::wcout << L"FAIL: rule not found: " << rule << L"\n";
+        ++failures;
+    };
+    expect(L"Browser URLBlocklist", repp::Severity::Suspicious);
+    expect(L"SettingsPageVisibility", repp::Severity::Suspicious);
+    expect(L"OpenSavePidlMRU disabled", repp::Severity::Suspicious);
+    expect(L"CMD AutoRun taskkill", repp::Severity::Suspicious);
+    expect(L"DisallowRun blocklist", repp::Severity::Suspicious);
+    expect(L"EnablePrefetcher modified", repp::Severity::Suspicious);
+    expect(L"PowerShell channel re-registered", repp::Severity::Review);
+    expect(L"BAM entries deleted", repp::Severity::Suspicious);
+    std::wcout << (failures == 0 ? L"SELFTEST PASS" : L"SELFTEST FAIL") << L" (" << failures << L" failures)\n";
+    return failures == 0 ? 0 : 1;
+}
+
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     repp::AppState state;
     if (argv != nullptr) {
         for (int i = 1; i < argc; ++i) {
+            if (wcscmp(argv[i], L"--selftest") == 0) {
+                int result = run_suspicious_selftest();
+                LocalFree(argv);
+                return result;
+            }
             if (wcscmp(argv[i], L"--dump") == 0 && i + 1 < argc) {
                 repp::RegistryHive hive;
                 bool ok = repp::hive_open(hive, argv[i + 1]);
@@ -164,6 +251,10 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
                 }
                 LocalFree(argv);
                 return 0;
+            }
+            if (wcscmp(argv[i], L"--suspicious") == 0) {
+                state.tab = repp::AppState::Suspicious;
+                continue;
             }
             if ((wcscmp(argv[i], L"--standard") == 0) || (wcscmp(argv[i], L"--everywhere") == 0)) {
                 continue;

@@ -36,6 +36,7 @@ struct RegistryHive {
     std::vector<uint8_t> bytes;
     std::vector<RegistryKey> keys;
     std::vector<RegistryValue> values;
+    std::vector<size_t> deletedKeyIndices;
     uint32_t rootOffset = 0xFFFFFFFFu;
     std::wstring error;
     bool ok = false;

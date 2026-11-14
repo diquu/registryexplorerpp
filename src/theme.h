@@ -20,14 +20,18 @@ const ImVec4 kAmber{0xE8 / 255.0f, 0xA3 / 255.0f, 0x3C / 255.0f, 1.0f};
 const ImVec4 kAmberSoft{0xE8 / 255.0f, 0xA3 / 255.0f, 0x3C / 255.0f, 0.16f};
 const ImVec4 kSelect{0x19 / 255.0f, 0x1F / 255.0f, 0x20 / 255.0f, 1.0f};
 const ImVec4 kHover{0x12 / 255.0f, 0x16 / 255.0f, 0x17 / 255.0f, 1.0f};
+const ImVec4 kSuspiciousColor{0xE2 / 255.0f, 0x5B / 255.0f, 0x4B / 255.0f, 1.0f};
+const ImVec4 kCleanColor{0x3F / 255.0f, 0xB6 / 255.0f, 0x8B / 255.0f, 1.0f};
 
 struct Fonts {
     ImFont* body = nullptr;
     ImFont* semibold = nullptr;
     ImFont* bold = nullptr;
     ImFont* mono = nullptr;
+    ImFont* display = nullptr;
 };
 
 Fonts setup_theme();
+const Fonts& fonts();
 
 }

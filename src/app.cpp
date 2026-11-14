@@ -1,5 +1,6 @@
 #include "app.h"
 #include "text.h"
+#include "suspicious.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -169,9 +170,14 @@ bool AppState::load_hive(const std::wstring& path) {
     if (selectedKey < 0 && !hive.keys.empty()) {
         selectedKey = 0;
     }
+    scan_suspicious();
     apply_filter();
     status = L"Opened " + hive.rootName;
     return true;
+}
+
+void AppState::scan_suspicious() {
+    findings = repp::scan_suspicious(hive);
 }
 
 void AppState::close_hive() {
@@ -181,6 +187,8 @@ void AppState::close_hive() {
     selectedKey = -1;
     visibleValues.clear();
     query.clear();
+    findings.clear();
+    tab = Tree;
     status = L"closed";
 }
 
@@ -242,13 +250,17 @@ void draw_top_bar(AppState& state, repp::Icons& icons) {
         ImGui::SetTooltip("Registry Explorer++");
     }
 
-    ImGui::SetCursorPos(ImVec2(70.0f, 12.0f));
+    ImGui::SetCursorPos(ImVec2(70.0f, 10.0f));
     const char* wordmark = "registry";
+    ImGui::PushFont(fonts().display);
     ImGui::TextColored(kText, "%s", wordmark);
     float width = ImGui::CalcTextSize(wordmark).x;
-    ImGui::SetCursorPos(ImVec2(70.0f + width, 12.0f));
+    ImGui::PopFont();
+    ImGui::SetCursorPos(ImVec2(70.0f + width, 10.0f));
+    ImGui::PushFont(fonts().display);
     ImGui::TextColored(kAmber, "explorer++");
-    ImGui::SetCursorPos(ImVec2(70.0f, 33.0f));
+    ImGui::PopFont();
+    ImGui::SetCursorPos(ImVec2(70.0f, 34.0f));
     ImGui::TextColored(kFaint, "registry hive inspector");
 
     float searchW = 320.0f;
@@ -360,32 +372,138 @@ void draw_top_bar(AppState& state, repp::Icons& icons) {
     ImGui::PopStyleColor();
 }
 
-void draw_tree_panel(AppState& state, float width) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, kBg);
-    ImGui::BeginChild("tree", ImVec2(width, 0.0f), false);
-
-    ImGui::SetCursorPos(ImVec2(16.0f, 12.0f));
-    ImGui::TextColored(kFaint, "HIVE");
-
-    ImGui::SetCursorPos(ImVec2(0.0f, 34.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 2.0f));
-    ImGui::BeginChild("tree_scroll", ImVec2(-1.0f, ImGui::GetContentRegionAvail().y), false);
-    ImGui::PushClipRect(ImVec2(0.0f, 0.0f), ImVec2(width, +100000.0f), true);
-    if (!state.hiveOpen) {
-        ImGui::SetCursorPos(ImVec2(16.0f, 24.0f));
-        ImGui::PushTextWrapPos(width - 32.0f);
-        ImGui::TextColored(kDim, "No hive open.");
-        ImGui::TextColored(kFaint, "Open a .dat hive from the toolbar to browse its keys.");
-        ImGui::PopTextWrapPos();
-    } else {
-        for (size_t i = 0; i < state.hive.keys.size(); ++i) {
-            if (state.hive.keys[i].cellOffset == state.hive.rootOffset) {
-                draw_key_node(state, i, 0);
-            }
+void draw_findings_list(AppState& state, float width) {
+    int suspiciousCount = 0;
+    for (const Finding& finding : state.findings) {
+        if (finding.severity == Severity::Suspicious) {
+            ++suspiciousCount;
         }
     }
-    ImGui::PopClipRect();
-    ImGui::EndChild();
+
+    for (size_t i = 0; i < state.findings.size(); ++i) {
+        const Finding& finding = state.findings[i];
+        float rowH = 58.0f;
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, kBg);
+        ImGui::BeginChild(("finding_" + std::to_string(i)).c_str(), ImVec2(-1.0f, rowH), false,
+                          ImGuiWindowFlags_NoScrollbar);
+
+        if (finding.severity == Severity::Suspicious) {
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                ImGui::GetWindowPos(), ImVec2(ImGui::GetWindowPos().x + 2.0f, ImGui::GetWindowPos().y + rowH),
+                ImGui::GetColorU32(kSuspiciousColor));
+        }
+
+        ImVec4 dot;
+        switch (finding.severity) {
+            case Severity::Suspicious: dot = kSuspiciousColor; break;
+            case Severity::Review: dot = kAmber; break;
+            case Severity::Clean: dot = kCleanColor; break;
+            default: dot = kFaint; break;
+        }
+        ImVec2 dotCenter = ImVec2(ImGui::GetWindowPos().x + 14.0f, ImGui::GetWindowPos().y + rowH * 0.5f);
+        ImGui::GetWindowDrawList()->AddCircleFilled(dotCenter, 4.5f, ImGui::GetColorU32(dot));
+
+        ImGui::SetCursorPos(ImVec2(28.0f, 8.0f));
+        ImGui::TextColored(kText, "%s", to_utf8(finding.rule).c_str());
+
+        ImGui::SetCursorPos(ImVec2(28.0f, 28.0f));
+        ImGui::TextColored(finding.severity == Severity::Suspicious ? kSuspiciousColor
+                           : (finding.severity == Severity::Review ? kAmber : kCleanColor),
+                           "%s", to_utf8(finding.status).c_str());
+        ImGui::SameLine();
+        std::wstring evidence = finding.evidence;
+        size_t nl = evidence.find(L'\n');
+        if (nl != std::wstring::npos) {
+            evidence.resize(nl);
+        }
+        evidence = from_utf8(to_utf8(evidence)).substr(0, 90);
+        ImGui::SameLine();
+        ImGui::TextColored(kFaint, "%s", to_utf8(evidence).c_str());
+
+        if (ImGui::IsItemClicked() && finding.keyIndex >= 0) {
+            state.selectedKey = finding.keyIndex;
+            state.tab = AppState::Tree;
+            state.apply_filter();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", to_utf8(finding.evidence).c_str());
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+}
+
+void draw_tree_panel(AppState& state, float width) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, kBg);
+    ImGui::BeginChild("tree", ImVec2(width, 0.0f), false, ImGuiWindowFlags_NoScrollbar);
+
+    int suspiciousCount = 0;
+    for (const Finding& finding : state.findings) {
+        if (finding.severity == Severity::Suspicious) {
+            ++suspiciousCount;
+        }
+    }
+
+    const float tabY = 12.0f;
+    const float tabH = 26.0f;
+    float tabW = (width - 24.0f) * 0.5f;
+
+    auto tabButton = [&](const char* label, int index) {
+        bool active = static_cast<int>(state.tab) == index;
+        ImGui::PushStyleColor(ImGuiCol_Button, active ? kSelect : kBg);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kHover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, kSelect);
+        ImGui::PushStyleColor(ImGuiCol_Text, active ? kText : kDim);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
+        std::string text = label;
+        if (index == 1 && suspiciousCount > 0) {
+            text += "  " + std::to_string(suspiciousCount);
+        }
+        if (ImGui::Button(text.c_str(), ImVec2(tabW, tabH))) {
+            state.tab = static_cast<AppState::PanelTab>(index);
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(4);
+    };
+
+    ImGui::SetCursorPos(ImVec2(12.0f, tabY));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2.0f, 0.0f));
+    tabButton("TREE", 0);
+    ImGui::SameLine();
+    tabButton("SUSPICIOUS", 1);
+    ImGui::PopStyleVar();
+
+    ImGui::SetCursorPos(ImVec2(0.0f, tabY + tabH + 8.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 2.0f));
+    if (state.tab == AppState::Suspicious) {
+        ImGui::BeginChild("findings_scroll", ImVec2(-1.0f, ImGui::GetContentRegionAvail().y), false);
+        if (state.findings.empty()) {
+            ImGui::SetCursorPos(ImVec2(16.0f, 24.0f));
+            ImGui::TextColored(kDim, "No hive open to scan.");
+        } else {
+            draw_findings_list(state, width);
+        }
+        ImGui::EndChild();
+    } else {
+        ImGui::BeginChild("tree_scroll", ImVec2(-1.0f, ImGui::GetContentRegionAvail().y), false);
+        ImGui::PushClipRect(ImVec2(0.0f, 0.0f), ImVec2(width, +100000.0f), true);
+        if (!state.hiveOpen) {
+            ImGui::SetCursorPos(ImVec2(16.0f, 24.0f));
+            ImGui::PushTextWrapPos(width - 32.0f);
+            ImGui::TextColored(kDim, "No hive open.");
+            ImGui::TextColored(kFaint, "Open a .dat hive from the toolbar to browse its keys.");
+            ImGui::PopTextWrapPos();
+        } else {
+            for (size_t i = 0; i < state.hive.keys.size(); ++i) {
+                if (state.hive.keys[i].cellOffset == state.hive.rootOffset) {
+                    draw_key_node(state, i, 0);
+                }
+            }
+        }
+        ImGui::PopClipRect();
+        ImGui::EndChild();
+    }
     ImGui::PopStyleVar();
 
     ImGui::EndChild();
@@ -461,59 +579,67 @@ void draw_values_panel(AppState& state) {
         ImGui::SetCursorPos(ImVec2(24.0f, 24.0f));
         ImGui::TextColored(kFaint, "No values match.");
     } else {
-        const ImGuiTableFlags flags = ImGuiTableFlags_RowBg;
-        if (ImGui::BeginTable("rows", 4, flags, ImVec2(-1.0f, 0.0f))) {
-            ImGui::PushStyleColor(ImGuiCol_TableRowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-            ImGui::PushStyleColor(ImGuiCol_TableRowBgAlt, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, numW);
-            ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, nameW);
-            ImGui::TableSetupColumn("type", ImGuiTableColumnFlags_WidthFixed, typeW);
-            ImGui::TableSetupColumn("data", ImGuiTableColumnFlags_WidthStretch);
+        const float rowH = 54.0f;
+        float contentW = ImGui::GetContentRegionAvail().x;
+        float nameX = 52.0f;
+        float typeX = 302.0f;
+        float dataX = 452.0f;
 
-            for (size_t i = 0; i < state.visibleValues.size(); ++i) {
-                const RegistryValue& value = state.hive.values[state.visibleValues[i]];
-                ImGui::TableNextRow(ImGuiTableRowFlags_None, 52.0f);
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextColored(kFaint, "%zu", i + 1);
-                ImGui::TableSetColumnIndex(1);
+        ImVec2 origin = ImGui::GetCursorScreenPos();
 
-                bool hovered = ImGui::IsMouseHoveringRect(ImGui::GetCursorScreenPos(),
-                                                          ImVec2(ImGui::GetCursorScreenPos().x + nameW,
-                                                                 ImGui::GetCursorScreenPos().y + 52.0f));
-                ImGui::PushStyleColor(ImGuiCol_Header, kSelect);
-                ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kHover);
-                ImGui::PushStyleColor(ImGuiCol_HeaderActive, kSelect);
-                ImGui::PushStyleColor(ImGuiCol_Text, kText);
-                ImGui::Selectable(to_utf8(value.name).c_str(), false, ImGuiSelectableFlags_SpanAllColumns |
-                                                                    ImGuiSelectableFlags_AllowOverlap,
-                                  ImVec2(0.0f, 52.0f));
-                ImGui::PopStyleColor(4);
-                if (ImGui::BeginPopupContextItem()) {
-                    if (ImGui::MenuItem("Copy value name")) {
-                        ImGui::SetClipboardText(to_utf8(value.name).c_str());
-                    }
-                    if (ImGui::MenuItem("Copy value data")) {
-                        ImGui::SetClipboardText(to_utf8(value.preview).c_str());
-                    }
-                    const RegistryKey& key = state.hive.keys[static_cast<size_t>(state.selectedKey)];
-                    if (ImGui::MenuItem("Copy key path")) {
-                        ImGui::SetClipboardText(to_utf8(key.path).c_str());
-                    }
-                    ImGui::EndPopup();
-                }
+        for (size_t i = 0; i < state.visibleValues.size(); ++i) {
+            const RegistryValue& value = state.hive.values[state.visibleValues[i]];
+            float y = static_cast<float>(i) * rowH;
+            ImVec2 rowMin(origin.x, origin.y + y);
+            ImVec2 rowMax(origin.x + contentW, origin.y + y + rowH);
 
-                ImGui::TableSetColumnIndex(2);
-                ImGui::TextColored(kDim, "%s", to_utf8(value_type_name(value.type)).c_str());
-                ImGui::TableSetColumnIndex(3);
-                std::wstring data = value.preview;
-                if (data.size() > 240) {
-                    data.resize(240);
-                    data += L"...";
-                }
-                ImGui::TextColored(kText, "%s", to_utf8(data).c_str());
+            ImDrawList* list = ImGui::GetWindowDrawList();
+            if ((i & 1) != 0) {
+                list->AddRectFilled(rowMin, rowMax, ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.025f)));
             }
-            ImGui::PopStyleColor(2);
-            ImGui::EndTable();
+            if (ImGui::InvisibleButton(("row" + std::to_string(i)).c_str(), ImVec2(contentW, rowH))) {
+            }
+            bool hovered = ImGui::IsItemHovered();
+            if (hovered) {
+                list->AddRectFilled(rowMin, rowMax, ImGui::GetColorU32(kHover));
+            }
+
+            list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(rowMin.x + 18.0f, rowMin.y + 19.0f),
+                          ImGui::GetColorU32(kFaint), std::to_string(i + 1).c_str());
+
+            std::string name = to_utf8(value.name);
+            if (name.size() > 42) {
+                name.resize(41);
+                name += "...";
+            }
+            list->AddText(ImVec2(rowMin.x + nameX, rowMin.y + 19.0f), ImGui::GetColorU32(kText), name.c_str());
+
+            std::string type = to_utf8(value_type_name(value.type));
+            list->AddText(ImVec2(rowMin.x + typeX, rowMin.y + 19.0f), ImGui::GetColorU32(kDim), type.c_str());
+
+            std::string data = to_utf8(value.preview);
+            if (data.size() > 96) {
+                data.resize(95);
+                data += "...";
+            }
+            list->AddText(ImVec2(rowMin.x + dataX, rowMin.y + 19.0f), ImGui::GetColorU32(kText), data.c_str());
+
+            if (hovered) {
+                ImGui::SetTooltip("%s", to_utf8(value.preview).c_str());
+            }
+            if (ImGui::BeginPopupContextItem(("ctx" + std::to_string(i)).c_str())) {
+                if (ImGui::MenuItem("Copy value name")) {
+                    ImGui::SetClipboardText(to_utf8(value.name).c_str());
+                }
+                if (ImGui::MenuItem("Copy value data")) {
+                    ImGui::SetClipboardText(to_utf8(value.preview).c_str());
+                }
+                const RegistryKey& key = state.hive.keys[static_cast<size_t>(state.selectedKey)];
+                if (ImGui::MenuItem("Copy key path")) {
+                    ImGui::SetClipboardText(to_utf8(key.path).c_str());
+                }
+                ImGui::EndPopup();
+            }
         }
     }
     ImGui::EndChild();

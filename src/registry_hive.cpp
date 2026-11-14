@@ -447,7 +447,7 @@ bool hive_open(RegistryHive& hive, const std::wstring& path) {
             bool resident = (dataLength & kFreeBit) != 0;
             dataLength &= ~kFreeBit;
             if (resident) {
-                uint32_t residentAt = absolute + 0x0C;
+                uint32_t residentAt = static_cast<uint32_t>(absolute + 0x0C);
                 size_t take = std::min<size_t>(dataLength, 4);
                 take = std::min<size_t>(take, hive.bytes.size() - residentAt);
                 value.data.assign(hive.bytes.begin() + residentAt, hive.bytes.begin() + residentAt + take);
@@ -589,6 +589,39 @@ bool hive_open(RegistryHive& hive, const std::wstring& path) {
                         hive.keys[i].path = parent.path + L"\\" + hive.keys[i].name;
                     }
                 }
+            }
+        }
+    }
+
+    hive.deletedKeyIndices.clear();
+    {
+        std::unordered_map<uint32_t, size_t> cellToIndex;
+        for (size_t i = 0; i < hive.keys.size(); ++i) {
+            cellToIndex[hive.keys[i].cellOffset] = i;
+        }
+        std::vector<char> reachable(hive.keys.size(), 0);
+        std::vector<size_t> stack;
+        for (size_t i = 0; i < hive.keys.size(); ++i) {
+            if (hive.keys[i].cellOffset == hive.rootOffset) {
+                stack.push_back(i);
+                reachable[i] = 1;
+                break;
+            }
+        }
+        while (!stack.empty()) {
+            size_t index = stack.back();
+            stack.pop_back();
+            for (uint32_t cell : hive.keys[index].subkeys) {
+                auto it = cellToIndex.find(cell);
+                if (it != cellToIndex.end() && !reachable[it->second]) {
+                    reachable[it->second] = 1;
+                    stack.push_back(it->second);
+                }
+            }
+        }
+        for (size_t i = 0; i < hive.keys.size(); ++i) {
+            if (!reachable[i]) {
+                hive.deletedKeyIndices.push_back(i);
             }
         }
     }

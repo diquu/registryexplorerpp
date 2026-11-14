@@ -3,6 +3,7 @@
 #include "registry_hive.h"
 #include "theme.h"
 #include "icons.h"
+#include "suspicious.h"
 
 #include <string>
 #include <unordered_map>
@@ -24,12 +25,16 @@ struct AppState {
     bool searchFocused = false;
     std::wstring status;
 
+    enum PanelTab { Tree, Suspicious } tab = Tree;
+    std::vector<Finding> findings;
+
     std::vector<size_t> visibleValues;
 
     bool load_hive(const std::wstring& path);
     void close_hive();
     void apply_filter();
     void sort_visible();
+    void scan_suspicious();
 };
 
 void draw_top_bar(AppState& state, repp::Icons& icons);
