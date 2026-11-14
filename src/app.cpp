@@ -292,6 +292,9 @@ void draw_top_bar(AppState& state, repp::Icons& icons) {
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_F)) {
         ImGui::SetKeyboardFocusHere();
     }
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D)) {
+        state.drawerOpen = !state.drawerOpen;
+    }
     ImGui::PushItemWidth(searchW);
     if (ImGui::InputTextWithHint("##search", "    Search values (Ctrl+F)", queryBuffer, sizeof(queryBuffer))) {
         state.query = from_utf8(queryBuffer);
@@ -336,6 +339,17 @@ void draw_top_bar(AppState& state, repp::Icons& icons) {
         ImVec2 iconMin = ImVec2(rectMin.x + 10.0f, rectMin.y + (30.0f - icon) * 0.5f);
         draw->AddImage(icons.download, iconMin, ImVec2(iconMin.x + icon, iconMin.y + icon));
     }
+
+    rightX -= 120.0f;
+    ImGui::SetCursorPos(ImVec2(rightX, buttonY));
+    ImGui::PushStyleColor(ImGuiCol_Button, state.drawerOpen ? kSelect : kPanel);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kHover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, kSelect);
+    ImGui::PushStyleColor(ImGuiCol_Text, state.drawerOpen ? kText : kDim);
+    if (ImGui::Button("Details", ImVec2(104.0f, 30.0f))) {
+        state.drawerOpen = !state.drawerOpen;
+    }
+    ImGui::PopStyleColor(4);
 
     rightX -= 128.0f;
     ImGui::SetCursorPos(ImVec2(rightX, buttonY));
@@ -515,13 +529,16 @@ void draw_values_panel(AppState& state) {
     ImGui::BeginChild("values", ImVec2(0.0f, 0.0f), false);
 
     const float headerH = 34.0f;
+    float avail = ImGui::GetContentRegionAvail().x;
+    const float numW = 52.0f;
+    const float nameW = std::min(250.0f, std::max(150.0f, avail * 0.26f));
+    const float typeW = 150.0f;
+    const float dataW = std::max(120.0f, avail - numW - nameW - typeW);
+    const float nameX = numW;
+    const float typeX = numW + nameW;
+    const float dataX = typeX + typeW;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, kPanel);
     ImGui::BeginChild("values_header", ImVec2(-1.0f, headerH), false, ImGuiWindowFlags_NoScrollbar);
-
-    float numW = 52.0f;
-    float nameW = 250.0f;
-    float typeW = 150.0f;
-    float dataW = std::max(200.0f, ImGui::GetContentRegionAvail().x - numW - nameW - typeW - 32.0f);
 
     auto sortHeader = [&](const char* label, float width, const char* column) {
         bool active = lower(state.sortColumn) == lower(column);
@@ -581,9 +598,6 @@ void draw_values_panel(AppState& state) {
     } else {
         const float rowH = 54.0f;
         float contentW = ImGui::GetContentRegionAvail().x;
-        float nameX = 52.0f;
-        float typeX = 302.0f;
-        float dataX = 452.0f;
 
         ImVec2 origin = ImGui::GetCursorScreenPos();
 
@@ -607,21 +621,38 @@ void draw_values_panel(AppState& state) {
             list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(rowMin.x + 18.0f, rowMin.y + 19.0f),
                           ImGui::GetColorU32(kFaint), std::to_string(i + 1).c_str());
 
-            std::string name = to_utf8(value.name);
-            if (name.size() > 42) {
-                name.resize(41);
-                name += "...";
-            }
+            auto ellipsize = [](std::string s, float maxWidth) {
+                if (maxWidth < 40.0f) {
+                    return s;
+                }
+                if (ImGui::CalcTextSize(s.c_str()).x <= maxWidth) {
+                    return s;
+                }
+                while (!s.empty() && ImGui::CalcTextSize((s + "...").c_str()).x > maxWidth) {
+                    s.pop_back();
+                }
+                s += "...";
+                return s;
+            };
+
+            std::string name = ellipsize(to_utf8(value.name), nameW - 16.0f);
             list->AddText(ImVec2(rowMin.x + nameX, rowMin.y + 19.0f), ImGui::GetColorU32(kText), name.c_str());
 
             std::string type = to_utf8(value_type_name(value.type));
-            list->AddText(ImVec2(rowMin.x + typeX, rowMin.y + 19.0f), ImGui::GetColorU32(kDim), type.c_str());
+            ImVec4 typeColor = kDim;
+            if (value.type == 4 || value.type == 5 || value.type == 11) {
+                typeColor = kAmber;
+            } else if (value.type == 3) {
+                typeColor = kFaint;
+            }
+            list->AddText(ImVec2(rowMin.x + typeX, rowMin.y + 19.0f), ImGui::GetColorU32(typeColor),
+                          type.c_str());
 
             std::string data = to_utf8(value.preview);
             if (data.size() > 96) {
                 data.resize(95);
-                data += "...";
             }
+            data = ellipsize(data, contentW - dataX - 16.0f);
             list->AddText(ImVec2(rowMin.x + dataX, rowMin.y + 19.0f), ImGui::GetColorU32(kText), data.c_str());
 
             if (hovered) {
@@ -666,27 +697,52 @@ void draw_drawer(AppState& state, float width) {
     if (state.hiveOpen && state.selectedKey >= 0 &&
         static_cast<size_t>(state.selectedKey) < state.hive.keys.size()) {
         const RegistryKey& key = state.hive.keys[static_cast<size_t>(state.selectedKey)];
-        ImGui::SetCursorPos(ImVec2(16.0f, 34.0f));
-        ImGui::PushTextWrapPos(width - 16.0f);
-        ImGui::TextColored(kText, "%s", to_utf8(key.path).c_str());
-        ImGui::PopTextWrapPos();
 
-        ImGui::SetCursorPos(ImVec2(16.0f, 88.0f));
-        ImGui::TextColored(kFaint, "last write");
-        ImGui::SetCursorPos(ImVec2(16.0f, 106.0f));
+        std::string path = to_utf8(key.path);
+        ImVec2 boxMin = ImVec2(16.0f, 36.0f);
+        float boxW = width - 32.0f;
+        float boxH = 118.0f;
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(ImGui::GetWindowPos().x + boxMin.x,
+                                                          ImGui::GetWindowPos().y + boxMin.y),
+                                                    ImVec2(ImGui::GetWindowPos().x + boxMin.x + boxW,
+                                                           ImGui::GetWindowPos().y + boxMin.y + boxH),
+                                                    ImGui::GetColorU32(kSelect), 2.0f);
+        ImGui::SetCursorPos(ImVec2(28.0f, 48.0f));
+        ImGui::PushFont(fonts().mono);
+        ImGui::PushTextWrapPos(width - 28.0f);
+        ImGui::TextColored(kText, "%s", path.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
+
+        ImGui::SetCursorPos(ImVec2(16.0f, 168.0f));
+        ImGui::TextColored(kFaint, "LAST WRITE");
+        ImGui::SetCursorPos(ImVec2(16.0f, 186.0f));
         ImGui::TextColored(kText, "%s", to_utf8(format_filetime(key.lastWrite)).c_str());
 
-        ImGui::SetCursorPos(ImVec2(16.0f, 128.0f));
-        ImGui::TextColored(kFaint, "flags");
-        ImGui::SetCursorPos(ImVec2(16.0f, 146.0f));
+        ImGui::SetCursorPos(ImVec2(16.0f, 208.0f));
+        ImGui::TextColored(kFaint, "FLAGS");
+        ImGui::SetCursorPos(ImVec2(16.0f, 226.0f));
         wchar_t flags[32];
         swprintf_s(flags, L"0x%08X", key.flags);
         ImGui::TextColored(kText, "%s", to_utf8(flags).c_str());
 
-        ImGui::SetCursorPos(ImVec2(16.0f, 168.0f));
-        ImGui::TextColored(kFaint, "subkeys / values");
-        ImGui::SetCursorPos(ImVec2(16.0f, 186.0f));
-        ImGui::TextColored(kText, "%zu / %zu", key.subkeys.size(), key.values.size());
+        ImGui::SetCursorPos(ImVec2(16.0f, 248.0f));
+        ImGui::TextColored(kFaint, "SUBKEYS / VALUES");
+        ImGui::SetCursorPos(ImVec2(16.0f, 266.0f));
+        ImGui::TextColored(kText, "%zu  /  %zu", key.subkeys.size(), key.values.size());
+
+        ImGui::SetCursorPos(ImVec2(16.0f, 300.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, kHover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kSelect);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, kSelect);
+        ImGui::PushStyleColor(ImGuiCol_Text, kText);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0f, 6.0f));
+        if (ImGui::Button("Copy key path")) {
+            ImGui::SetClipboardText(path.c_str());
+        }
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(4);
     } else {
         ImGui::SetCursorPos(ImVec2(16.0f, 34.0f));
         ImGui::TextColored(kDim, "no key selected");
@@ -707,8 +763,13 @@ void draw_status_bar(AppState& state, float contentHeight) {
 
     std::string right = "ready";
     if (state.hiveOpen) {
-        right = std::to_string(state.hive.keys.size()) + " keys  /  " + std::to_string(state.hive.values.size()) +
-                " values";
+        std::wstring file = state.hive.filePath;
+        size_t slash = file.find_last_of(L"\\/");
+        if (slash != std::wstring::npos) {
+            file = file.substr(slash + 1);
+        }
+        right = to_utf8(file) + "  ·  " + std::to_string(state.hive.keys.size()) + " keys  /  " +
+                std::to_string(state.hive.values.size()) + " values";
     }
     float width = ImGui::CalcTextSize(right.c_str()).x;
     ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - width - 24.0f,

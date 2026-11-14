@@ -256,6 +256,10 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
                 state.tab = repp::AppState::Suspicious;
                 continue;
             }
+            if (wcscmp(argv[i], L"--details") == 0) {
+                state.drawerOpen = true;
+                continue;
+            }
             if ((wcscmp(argv[i], L"--standard") == 0) || (wcscmp(argv[i], L"--everywhere") == 0)) {
                 continue;
             }
