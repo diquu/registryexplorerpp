@@ -20,6 +20,8 @@ struct Finding {
     std::wstring status;
     std::wstring evidence;
     int keyIndex = -1;
+    std::vector<std::wstring> flaggedValues;
+    int hiveIndex = 0;
 };
 
 std::vector<Finding> scan_suspicious(const RegistryHive& hive);

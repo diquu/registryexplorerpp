@@ -172,7 +172,11 @@ int run_suspicious_selftest() {
     size_t prefetch = addKey(L"SYSTEM\\ControlSet001\\Control\\Session Manager\\Memory Management\\PrefetchParameters");
     addValue(prefetch, L"EnablePrefetcher", 4, L"0x00000000 (0)", {0, 0, 0, 0});
 
-    addKey(L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WINEVT\\Channels\\Microsoft-Windows-PowerShell/Operational");
+    size_t ifeoRoot = addKey(L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options");
+    (void)ifeoRoot;
+    size_t ifeoCmd = addKey(
+        L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\cmd.exe");
+    addValue(ifeoCmd, L"Debugger", 1, L"C:\\tools\\fake-debugger.exe", {});
 
     size_t bam = addKey(L"SYSTEM\\ControlSet001\\Services\\bam");
     hive.deletedKeyIndices.push_back(bam);
@@ -202,7 +206,7 @@ int run_suspicious_selftest() {
     expect(L"CMD AutoRun taskkill", repp::Severity::Suspicious);
     expect(L"DisallowRun blocklist", repp::Severity::Suspicious);
     expect(L"EnablePrefetcher modified", repp::Severity::Suspicious);
-    expect(L"PowerShell channel re-registered", repp::Severity::Review);
+    expect(L"IFEO Debugger", repp::Severity::Suspicious);
     expect(L"BAM entries deleted", repp::Severity::Suspicious);
     std::wcout << (failures == 0 ? L"SELFTEST PASS" : L"SELFTEST FAIL") << L" (" << failures << L" failures)\n";
     return failures == 0 ? 0 : 1;
@@ -212,6 +216,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     repp::AppState state;
+    bool openSuspicious = false;
     if (argv != nullptr) {
         for (int i = 1; i < argc; ++i) {
             if (wcscmp(argv[i], L"--selftest") == 0) {
@@ -253,11 +258,16 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
                 return 0;
             }
             if (wcscmp(argv[i], L"--suspicious") == 0) {
-                state.tab = repp::AppState::Suspicious;
+                openSuspicious = true;
                 continue;
             }
             if (wcscmp(argv[i], L"--details") == 0) {
                 state.drawerOpen = true;
+                continue;
+            }
+            if (wcscmp(argv[i], L"--search") == 0 && i + 1 < argc) {
+                state.query = argv[i + 1];
+                ++i;
                 continue;
             }
             if ((wcscmp(argv[i], L"--standard") == 0) || (wcscmp(argv[i], L"--everywhere") == 0)) {
@@ -265,11 +275,15 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
             }
             if (GetFileAttributesW(argv[i]) != INVALID_FILE_ATTRIBUTES) {
                 state.load_hive(argv[i]);
-                break;
+                continue;
             }
         }
         LocalFree(argv);
     }
+    if (openSuspicious) {
+        state.tab = repp::AppState::Suspicious;
+    }
+    state.apply_filter();
 
     WNDCLASSEXW wndClass = {};
     wndClass.cbSize = sizeof(wndClass);
@@ -350,14 +364,14 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         ImGui::BeginChild("body", ImVec2(-1.0f, bodyBottom - bodyTop), false, ImGuiWindowFlags_NoScrollbar);
 
         ImGui::SetCursorPos(ImVec2(0.0f, 0.0f));
-        repp::draw_tree_panel(state, railW);
+        repp::draw_tree_panel(state, icons, railW);
 
         ImGui::SetCursorPos(ImVec2(railW, 0.0f));
         ImGui::PushStyleColor(ImGuiCol_ChildBg, repp::kBg);
         ImGui::BeginChild("center", ImVec2(size.x - railW - drawerW, bodyBottom - bodyTop), false,
                           ImGuiWindowFlags_NoScrollbar);
         ImGui::SetCursorPos(ImVec2(railW, 0.0f));
-        repp::draw_values_panel(state);
+        repp::draw_values_panel(state, icons);
         ImGui::EndChild();
         ImGui::PopStyleColor();
 
@@ -371,10 +385,13 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
 
         repp::draw_status_bar(state, bodyBottom - bodyTop);
 
+        repp::draw_search_dropdown(state, icons);
+
         ImGui::EndChild();
         ImGui::PopStyleColor();
 
         ImGui::End();
+
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
 

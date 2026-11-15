@@ -81,13 +81,17 @@ bool Icons::load(ID3D11Device* device, const std::wstring& iconsDir) {
     bool ok = true;
     ok = loadOne(key, L"key-128.png") && ok;
     ok = loadOne(folderOpen, L"folder-open-128.png") && ok;
-    ok = loadOne(download, L"download-128.png") && ok;
     ok = loadOne(magnifier, L"magnifier-128.png") && ok;
+    ok = loadOne(shieldWarning, L"shield-warning-128.png") && ok;
+    ok = loadOne(shieldCheck, L"shield-check-128.png") && ok;
+    ok = loadOne(treeStructure, L"tree-structure-128.png") && ok;
+    ok = loadOne(keyLight, L"key-light-128.png") && ok;
     return ok;
 }
 
 void Icons::release() {
-    for (ImTextureID* slot : {&key, &folderOpen, &download, &magnifier}) {
+    for (ImTextureID* slot : {&key, &folderOpen, &magnifier, &shieldWarning, &shieldCheck,
+                              &treeStructure, &keyLight}) {
         if (*slot != 0) {
             reinterpret_cast<ID3D11ShaderResourceView*>(*slot)->Release();
             *slot = 0;

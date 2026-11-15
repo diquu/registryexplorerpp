@@ -14,8 +14,11 @@ namespace repp {
 struct Icons {
     ImTextureID key = 0;
     ImTextureID folderOpen = 0;
-    ImTextureID download = 0;
     ImTextureID magnifier = 0;
+    ImTextureID shieldWarning = 0;
+    ImTextureID shieldCheck = 0;
+    ImTextureID treeStructure = 0;
+    ImTextureID keyLight = 0;
 
     bool load(ID3D11Device* device, const std::wstring& basePath);
     void release();

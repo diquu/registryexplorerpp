@@ -112,6 +112,7 @@ std::vector<Finding> scan_suspicious(const RegistryHive& hive) {
         std::wstring evidence;
         int hits = 0;
         int keyIndex = -1;
+        std::vector<std::wstring> flagged;
         for (size_t i = 0; i < hive.keys.size(); ++i) {
             if (ends_with_ci(hive.keys[i].path, L"\\URLBlocklist") &&
                 contains_ci(hive.keys[i].path, L"Policies")) {
@@ -120,6 +121,9 @@ std::vector<Finding> scan_suspicious(const RegistryHive& hive) {
                     ++hits;
                     if (keyIndex < 0) {
                         keyIndex = static_cast<int>(i);
+                    }
+                    for (const RegistryValue* value : values) {
+                        flagged.push_back(value->name);
                     }
                     evidence += hive.keys[i].path + L": " + gather_value_strings(values) + L"\n";
                 }
@@ -130,6 +134,7 @@ std::vector<Finding> scan_suspicious(const RegistryHive& hive) {
             finding.status = L"SUSPICIOUS";
             finding.evidence = L"Blocklists are present and may block pages needed for the review:\n" + evidence;
             finding.keyIndex = keyIndex;
+            finding.flaggedValues = flagged;
         }
         out.push_back(finding);
     }
@@ -150,6 +155,7 @@ std::vector<Finding> scan_suspicious(const RegistryHive& hive) {
                 finding.status = L"SUSPICIOUS";
                 finding.evidence = L"Settings pages are restricted: " + content;
                 finding.keyIndex = static_cast<int>(key - hive.keys.data());
+                finding.flaggedValues.push_back(L"SettingsPageVisibility");
             }
         }
         out.push_back(finding);
@@ -171,6 +177,7 @@ std::vector<Finding> scan_suspicious(const RegistryHive& hive) {
                     finding.status = L"SUSPICIOUS";
                     finding.evidence = L"ComDlg32\\NotFileMru = 1 (DWORD): file open/save history collection is disabled.";
                     finding.keyIndex = static_cast<int>(key - hive.keys.data());
+                    finding.flaggedValues.push_back(L"NotFileMru");
                 }
             }
         }
@@ -264,21 +271,48 @@ std::vector<Finding> scan_suspicious(const RegistryHive& hive) {
         out.push_back(finding);
     }
 
-    // Rule 7 — PowerShell operational channel last write (disabled+re-enabled to hide events)
+    // Rule 7 — IFEO Debugger (Image File Execution Options with a "Debugger" value = process is
+    // redirected on launch; classic persistence/evasion during review)
     {
         Finding finding;
-        finding.rule = L"PowerShell channel re-registered";
-        finding.severity = Severity::NotApplicable;
-        finding.status = L"N/A";
-        finding.evidence = L"Not in this hive (SYSTEM/SOFTWARE hive with the channel key).";
-        const RegistryKey* key = find_key_by_index_of_suffix(hive,
-                                                             L"WINEVT\\Channels\\Microsoft-Windows-PowerShell/Operational");
-        if (key != nullptr) {
-            finding.severity = Severity::Review;
-            finding.status = L"REVIEW";
-            finding.evidence = L"Channel key last write: " + format_filetime(key->lastWrite) +
-                               L". If this is after the logon time, the channel was disabled and re-enabled to hide events.";
-            finding.keyIndex = static_cast<int>(key - hive.keys.data());
+        finding.rule = L"IFEO Debugger";
+        finding.severity = Severity::Clean;
+        finding.status = L"CLEAN";
+        finding.evidence = L"No \"Debugger\" values under Image File Execution Options.";
+        std::wstring hits;
+        int hitsCount = 0;
+        int keyIndex = -1;
+        std::vector<std::wstring> flagged;
+        const std::wstring ifeo = L"Image File Execution Options";
+        for (size_t i = 0; i < hive.keys.size(); ++i) {
+            const std::wstring& path = hive.keys[i].path;
+            size_t ifeoPos = lower(path).find(lower(ifeo));
+            if (ifeoPos == std::wstring::npos) {
+                continue;
+            }
+            std::wstring tail = lower(path.substr(ifeoPos));
+            bool isIfeoRoot = tail == lower(ifeo);
+            bool isIfeoChild = contains_ci(path.substr(ifeoPos), L"\\");
+            if (!isIfeoRoot && !isIfeoChild) {
+                continue;
+            }
+            auto matches = values_named(hive, hive.keys[i], L"Debugger");
+            for (const RegistryValue* value : matches) {
+                if (keyIndex < 0) {
+                    keyIndex = static_cast<int>(i);
+                }
+                ++hitsCount;
+                flagged.push_back(value->name);
+                hits += L"  " + path + L": Debugger = " + value->preview + L"\n";
+            }
+        }
+        if (hitsCount > 0) {
+            finding.severity = Severity::Suspicious;
+            finding.status = L"SUSPICIOUS";
+            finding.evidence = std::to_wstring(hitsCount) +
+                               L" \"Debugger\" value(s) under Image File Execution Options:\n" + hits;
+            finding.keyIndex = keyIndex;
+            finding.flaggedValues = flagged;
         }
         out.push_back(finding);
     }
