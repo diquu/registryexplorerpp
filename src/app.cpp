@@ -137,7 +137,7 @@ void draw_key_node(AppState& state, repp::Icons& icons, int hiveIndex, size_t in
         list->AddRectFilled(ImVec2(rowMin.x + 2.0f, rowMin.y + 1.0f), ImVec2(rowMax.x - 2.0f, rowMax.y - 1.0f),
                             ImGui::GetColorU32(with_alpha(kSelect, alpha)), 4.0f);
         list->AddRectFilled(ImVec2(rowMin.x + 2.0f, rowMin.y + 4.0f), ImVec2(rowMin.x + 3.0f, rowMax.y - 4.0f),
-                            ImGui::GetColorU32(with_alpha(kAmber, alpha)), 0.5f);
+                            ImGui::GetColorU32(with_alpha(kAccent, alpha)), 0.5f);
     } else if (hover > 0.02f) {
         list->AddRectFilled(ImVec2(rowMin.x + 2.0f, rowMin.y + 1.0f), ImVec2(rowMax.x - 2.0f, rowMax.y - 1.0f),
                             ImGui::GetColorU32(with_alpha(kHover, hover * alpha)), 4.0f);
@@ -149,7 +149,7 @@ void draw_key_node(AppState& state, repp::Icons& icons, int hiveIndex, size_t in
         float ang = chevronEase * 1.5707963f;
         float s = std::sin(ang), co = std::cos(ang);
         auto rot = [&](float x, float y) { return ImVec2(cx + x * co - y * s, midY + x * s + y * co); };
-        ImU32 chev = ImGui::GetColorU32(with_alpha(selected ? kAmber : kDim, alpha));
+        ImU32 chev = ImGui::GetColorU32(with_alpha(selected ? kAccent : kDim, alpha));
         ImVec2 p0 = rot(-2.4f, -3.4f);
         ImVec2 p1 = rot(1.8f, 0.0f);
         ImVec2 p2 = rot(-2.4f, 3.4f);
@@ -160,7 +160,7 @@ void draw_key_node(AppState& state, repp::Icons& icons, int hiveIndex, size_t in
     float iconH = 13.0f;
     float iconX = rowMin.x + indentX + 11.0f;
     if (icons.keyLight != 0) {
-        ImVec4 tint = selected ? kAmber : (hasChildren ? kDim : kFaint);
+        ImVec4 tint = selected ? kAccent : (hasChildren ? kDim : kFaint);
         list->AddImage(icons.keyLight, ImVec2(iconX, midY - iconH * 0.5f),
                        ImVec2(iconX + iconH, midY + iconH * 0.5f), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
                        ImGui::GetColorU32(with_alpha(tint, alpha)));
@@ -394,7 +394,7 @@ void draw_top_bar(AppState& state, repp::Icons& icons) {
     const float y = (kTopBarH - 34.0f) * 0.5f;
     ImVec2 tilePos = ImVec2(24.0f, y);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(tilePos, ImVec2(tilePos.x + 34.0f, tilePos.y + 34.0f), ImGui::GetColorU32(kAmber), 8.0f);
+    draw->AddRectFilled(tilePos, ImVec2(tilePos.x + 34.0f, tilePos.y + 34.0f), ImGui::GetColorU32(kAccent), 8.0f);
     if (icons.key != 0) {
         float icon = 22.0f;
         ImVec2 iconMin = ImVec2(tilePos.x + (34.0f - icon) * 0.5f, tilePos.y + (34.0f - icon) * 0.5f);
@@ -414,7 +414,7 @@ void draw_top_bar(AppState& state, repp::Icons& icons) {
     ImGui::PopFont();
     ImGui::SetCursorPos(ImVec2(70.0f + width, 10.0f));
     ImGui::PushFont(fonts().display);
-    ImGui::TextColored(kAmber, "explorer++");
+    ImGui::TextColored(kAccent, "explorer++");
     ImGui::PopFont();
     ImGui::SetCursorPos(ImVec2(70.0f, 34.0f));
     ImGui::TextColored(kFaint, "made by diquu");
@@ -703,7 +703,7 @@ void draw_tree_panel(AppState& state, repp::Icons& icons, float width) {
             badge = std::to_string(suspiciousCount);
         }
         std::string text = label;
-        ImVec4 iconTint = active ? kAmber : kDim;
+        ImVec4 iconTint = active ? kAccent : kDim;
         ImVec4 textTint = active ? kText : kDim;
         float iconH = 15.0f;
         float textW = ImGui::CalcTextSize(text.c_str()).x;
@@ -759,7 +759,7 @@ void draw_tree_panel(AppState& state, repp::Icons& icons, float width) {
             float iconH = 13.0f;
             list->AddImage(icons.keyLight, ImVec2(bMin.x + 9.0f, (bMin.y + bMax.y) * 0.5f - iconH * 0.5f),
                            ImVec2(bMin.x + 9.0f + iconH, (bMin.y + bMax.y) * 0.5f + iconH * 0.5f),
-                           ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImGui::GetColorU32(kAmber));
+                           ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImGui::GetColorU32(kAccent));
         }
         std::string label = state.hiveOpen() ? ellipsize(hive_file_name(state.cur_hive()), btnW - 66.0f)
                                              : std::string("no hive loaded");

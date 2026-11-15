@@ -1,4 +1,4 @@
-﻿#include "theme.h"
+#include "theme.h"
 #include "registry_hive.h"
 #include "app.h"
 #include "suspicious.h"
@@ -396,7 +396,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         ImGui::PopStyleColor();
 
         ImGui::Render();
-        const float clear[4] = {0x0B / 255.0f, 0x0D / 255.0f, 0x0E / 255.0f, 1.0f};
+        const float clear[4] = {0x0F / 255.0f, 0x12 / 255.0f, 0x16 / 255.0f, 1.0f};
         g_context->OMSetRenderTargets(1, &g_renderTargetView, nullptr);
         g_context->ClearRenderTargetView(g_renderTargetView, clear);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
